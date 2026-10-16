@@ -176,7 +176,7 @@ class PeersUI {
     _onSetProgress(progress) {
         const $peer = $(progress.peerId);
         if (!$peer) return;
-        $peer.ui.setProgress(progress.progress, progress.status)
+        $peer.ui.setProgress(progress.progress, progress.status, progress.speed, progress.eta)
     }
 
     _onDrop(e) {
@@ -451,6 +451,10 @@ class PeerUI {
                   <div class="circle"></div>
                   <div class="circle right"></div>
                 </div>
+                <button class="transfer-cancel center" type="button"
+                        title="${Localization.getTranslation("peer-ui.cancel-transfer")}">
+                    <svg class="icon"><use xlink:href="#close-icon"/></svg>
+                </button>
                 <div class="device-descriptor">
                     <div class="name font-subheading"></div>
                     <div class="device-name font-body2"></div>
@@ -464,6 +468,9 @@ class PeerUI {
 
         this.$label = this.$el.querySelector('label');
         this.$input = this.$el.querySelector('input');
+
+        this.$el.querySelector('.transfer-cancel')
+            .addEventListener('click', e => this._onCancelTransfer(e));
     }
 
     addTypesToClassList() {
@@ -612,7 +619,7 @@ class PeerUI {
         $input.files = null; // reset input
     }
 
-    setProgress(progress, status) {
+    setProgress(progress, status, speed, eta) {
         const $progress = this.$el.querySelector('.progress');
         if (0.5 < progress && progress < 1) {
             $progress.classList.add('over50');
@@ -621,17 +628,26 @@ class PeerUI {
             $progress.classList.remove('over50');
         }
         if (progress < 1) {
-            if (status !== this.currentStatus) {
-                let statusName = {
-                    "prepare": Localization.getTranslation("peer-ui.preparing"),
-                    "transfer": Localization.getTranslation("peer-ui.transferring"),
-                    "process": Localization.getTranslation("peer-ui.processing"),
-                    "wait": Localization.getTranslation("peer-ui.waiting")
-                }[status];
+            const statusName = {
+                "prepare": Localization.getTranslation("peer-ui.preparing"),
+                "transfer": Localization.getTranslation("peer-ui.transferring"),
+                "process": Localization.getTranslation("peer-ui.processing"),
+                "wait": Localization.getTranslation("peer-ui.waiting")
+            }[status];
 
+            let statusText = statusName;
+            if (status === "transfer" && speed) {
+                statusText = `${statusName} · ${PeerUI._formatSpeed(speed)}`;
+                if (eta) {
+                    statusText += ` · ${PeerUI._formatEta(eta)}`;
+                }
+            }
+
+            if (statusText !== this.currentStatusText) {
                 this.$el.setAttribute('status', status);
-                this.$el.querySelector('.status').innerText = statusName;
+                this.$el.querySelector('.status').innerText = statusText;
                 this.currentStatus = status;
+                this.currentStatusText = statusText;
             }
         }
         else {
@@ -639,9 +655,37 @@ class PeerUI {
             this.$el.querySelector('.status').innerHTML = '';
             progress = 0;
             this.currentStatus = null;
+            this.currentStatusText = null;
         }
         const degrees = `rotate(${360 * progress}deg)`;
         $progress.style.setProperty('--progress', degrees);
+    }
+
+    static _formatSpeed(bytesPerSecond) {
+        if (bytesPerSecond >= 1048576) {
+            return `${(bytesPerSecond / 1048576).toFixed(1)} MB/s`;
+        }
+        if (bytesPerSecond >= 1024) {
+            return `${Math.round(bytesPerSecond / 1024)} KB/s`;
+        }
+        return `${Math.round(bytesPerSecond)} B/s`;
+    }
+
+    static _formatEta(seconds) {
+        seconds = Math.max(1, Math.round(seconds));
+        if (seconds < 60) return `${seconds}s`;
+        const minutes = Math.floor(seconds / 60);
+        const rest = seconds % 60;
+        return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+    }
+
+    _onCancelTransfer(e) {
+        // The button lives inside the peer card's label: swallow the
+        // event so it neither opens the file picker nor triggers the
+        // card's click handlers.
+        e.preventDefault();
+        e.stopPropagation();
+        Events.fire('transfer-abort', {peerId: this._peer.id});
     }
 
     _onDrop(e) {

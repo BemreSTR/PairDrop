@@ -104,6 +104,7 @@ export default class PairDropWsServer {
             case 'progress':
             case 'files-transfer-response':
             case 'file-transfer-complete':
+            case 'transfer-abort':
             case 'message-transfer-complete':
             case 'text':
             case 'display-name-changed':

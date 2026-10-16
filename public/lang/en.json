@@ -162,7 +162,8 @@
         "message-transfer-completed": "Message transfer completed",
         "unfinished-transfers-warning": "There are unfinished transfers. Are you sure you want to close PairDrop?",
         "rate-limit-join-key": "Rate limit reached. Wait 10 seconds and try again.",
-        "selected-peer-left": "Selected peer left"
+        "selected-peer-left": "Selected peer left",
+        "transfer-canceled": "Transfer cancelled"
     },
     "document-titles": {
         "file-received": "File Received",
@@ -179,6 +180,7 @@
         "preparing": "Preparing…",
         "waiting": "Waiting…",
         "processing": "Processing…",
-        "transferring": "Transferring…"
+        "transferring": "Transferring…",
+        "cancel-transfer": "Cancel transfer"
     }
 }

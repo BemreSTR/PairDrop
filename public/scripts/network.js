@@ -193,6 +193,7 @@ class ServerConnection {
             case 'progress':
             case 'files-transfer-response':
             case 'file-transfer-complete':
+            case 'transfer-abort':
             case 'message-transfer-complete':
             case 'text':
             case 'display-name-changed':
@@ -318,6 +319,12 @@ class ServerConnection {
         this._connect();
     }
 }
+
+// Live chunkers per peer id. A peer connection can be replaced by a
+// reconnect race while one of its chunkers is still streaming; this
+// registry lets an abort stop every chunker aimed at a peer, including
+// ones no longer referenced by the current Peer instance.
+const activeChunkersByPeerId = new Map();
 
 class Peer {
 
@@ -462,6 +469,8 @@ class Peer {
         Events.fire('set-progress', {peerId: this._peerId, progress: 1, status: 'prepare'})
 
         this._filesRequested = files;
+        this._transferTotalSize = totalSize;
+        this._speedState = null;
 
         this.sendJSON({type: 'request',
             header: header,
@@ -537,13 +546,16 @@ class Peer {
                 this._sendNextPartition();
                 break;
             case 'progress':
-                this._onDownloadProgress(messageJSON.progress);
+                if (this._busy) this._onDownloadProgress(messageJSON.progress);
                 break;
             case 'files-transfer-response':
                 this._onFileTransferRequestResponded(messageJSON);
                 break;
             case 'file-transfer-complete':
                 this._onFileTransferCompleted();
+                break;
+            case 'transfer-abort':
+                this._onTransferAborted();
                 break;
             case 'message-transfer-complete':
                 this._onMessageTransferCompleted();
@@ -586,10 +598,13 @@ class Peer {
     }
 
     _respondToFileTransferRequest(accepted) {
+        if (!this._requestPending) return;
         this.sendJSON({type: 'files-transfer-response', accepted: accepted});
         if (accepted) {
             this._requestAccepted = this._requestPending;
             this._totalBytesReceived = 0;
+            this._transferTotalSize = this._requestAccepted.totalSize;
+            this._speedState = null;
             this._busy = true;
             this._filesReceived = [];
         }
@@ -637,10 +652,85 @@ class Peer {
     }
 
     _onDownloadProgress(progress) {
-        Events.fire('set-progress', {peerId: this._peerId, progress: progress, status: 'transfer'});
+        const detail = {
+            peerId: this._peerId,
+            progress: progress,
+            status: 'transfer'
+        };
+
+        // Derive transfer speed and remaining time from consecutive
+        // progress updates; smoothed so the readout does not jitter.
+        if (progress > 0 && progress <= 1 && this._transferTotalSize) {
+            const now = performance.now();
+            const state = this._speedState;
+
+            if (state && progress >= state.progress && now > state.time) {
+                const deltaBytes = (progress - state.progress) * this._transferTotalSize;
+                const rate = deltaBytes / ((now - state.time) / 1000);
+                const speed = state.speed ? state.speed * 0.7 + rate * 0.3 : rate;
+
+                detail.speed = speed;
+                const remainingBytes = (1 - progress) * this._transferTotalSize;
+                if (speed > 0 && remainingBytes > 0) {
+                    detail.eta = remainingBytes / speed;
+                }
+
+                this._speedState = { progress: progress, time: now, speed: speed };
+            }
+            else {
+                this._speedState = { progress: progress, time: now, speed: state ? state.speed : 0 };
+            }
+        }
+
+        Events.fire('set-progress', detail);
+    }
+
+    abortTransfer() {
+        // Stop an in-flight transfer in both directions and inform the peer.
+        // Sending is best-effort: the channel may already be gone.
+        this._resetTransferState();
+        try {
+            this.sendJSON({type: 'transfer-abort'});
+        }
+        catch (e) {
+            console.error("Could not send transfer-abort:", e);
+        }
+        Events.fire('notify-user', Localization.getTranslation("notifications.transfer-canceled"));
+    }
+
+    _onTransferAborted() {
+        // The peer aborted the transfer: same cleanup without echoing
+        // the message back.
+        this._resetTransferState();
+        Events.fire('notify-user', Localization.getTranslation("notifications.transfer-canceled"));
+    }
+
+    _resetTransferState() {
+        // Stop every chunker streaming to this peer, including ones
+        // orphaned by a connection replacement mid-transfer.
+        for (const chunker of activeChunkersByPeerId.get(this._peerId) ?? []) {
+            chunker.abort();
+        }
+        activeChunkersByPeerId.delete(this._peerId);
+
+        this._chunker = null;
+        this._filesQueue = [];
+        this._filesRequested = null;
+        this._busy = false;
+        this._digester = null;
+        this._filesReceived = [];
+        this._requestPending = null;
+        this._requestAccepted = null;
+        this._totalBytesReceived = 0;
+        this._transferTotalSize = 0;
+        this._speedState = null;
+
+        Events.fire('set-progress', {peerId: this._peerId, progress: 0, status: 'wait'});
     }
 
     async _onFileReceived(fileBlob) {
+        if (!this._requestAccepted) return;
+
         const acceptedHeader = this._requestAccepted.header.shift();
         this._totalBytesReceived += fileBlob.size;
 
@@ -667,6 +757,7 @@ class Peer {
 
     _onFileTransferCompleted() {
         this._chunker = null;
+        if (!this._busy) return; // stale completion after an abort
         if (!this._filesQueue.length) {
             this._busy = false;
             Events.fire('notify-user', Localization.getTranslation("notifications.file-transfer-completed"));
@@ -686,6 +777,7 @@ class Peer {
             }
             return;
         }
+        if (!this._filesRequested) return; // stale response after an abort
         Events.fire('file-transfer-accepted');
         Events.fire('set-progress', {peerId: this._peerId, progress: 0, status: 'transfer'});
         this.sendFiles();
@@ -819,12 +911,15 @@ class RTCPeer extends Peer {
             mime: file.type
         });
 
+        this._chunker = new FileChunker(file, chunk => this._sendChunk(chunk));
+
         if (typeof this._channel?.bufferedAmountLowThreshold === 'number') {
             // Continuous streaming paced by the send buffer: no waiting
             // for per-partition acknowledgements, so the throughput is
             // no longer bound by one round trip per megabyte.
-            this._chunker = new FileChunker(file, chunk => this._sendChunk(chunk));
-            this._chunker.streamAll(() => this._awaitSendBufferDrained());
+            this._registerChunker(this._chunker);
+            this._chunker.streamAll(() => this._awaitSendBufferDrained())
+                .finally(() => this._unregisterChunker(this._chunker));
         }
         else {
             // Browser without bufferedAmountLow support:
@@ -834,6 +929,17 @@ class RTCPeer extends Peer {
                 offset => this._onPartitionEnd(offset));
             this._chunker.nextPartition();
         }
+    }
+
+    _registerChunker(chunker) {
+        if (!activeChunkersByPeerId.has(this._peerId)) {
+            activeChunkersByPeerId.set(this._peerId, new Set());
+        }
+        activeChunkersByPeerId.get(this._peerId).add(chunker);
+    }
+
+    _unregisterChunker(chunker) {
+        activeChunkersByPeerId.get(this._peerId)?.delete(chunker);
     }
 
     _sendChunk(chunk) {
@@ -1063,6 +1169,7 @@ class PeersManager {
         Events.on('peers', e => this._onPeers(e.detail));
         Events.on('files-selected', e => this._onFilesSelected(e.detail));
         Events.on('respond-to-files-transfer-request', e => this._onRespondToFileTransferRequest(e.detail))
+        Events.on('transfer-abort', e => this._onTransferAbort(e.detail));
         Events.on('send-text', e => this._onSendText(e.detail));
         Events.on('peer-left', e => this._onPeerLeft(e.detail));
         Events.on('peer-joined', e => this._onPeerJoined(e.detail));
@@ -1154,6 +1261,12 @@ class PeersManager {
 
     _onRespondToFileTransferRequest(detail) {
         this.peers[detail.to]._respondToFileTransferRequest(detail.accepted);
+    }
+
+    _onTransferAbort(detail) {
+        if (this.peers[detail.peerId]) {
+            this.peers[detail.peerId].abortTransfer();
+        }
     }
 
     async _onFilesSelected(message) {

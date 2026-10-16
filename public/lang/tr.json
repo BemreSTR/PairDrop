@@ -150,7 +150,8 @@
         "room-url-copied-to-clipboard": "Ortak oda bağlantısı panoya kopyalandı",
         "copied-text-error": "Panoya yazma başarısız oldu. Elle kopyalayın!",
         "download-successful": "{{descriptor}} indirildi",
-        "click-to-show": "Göstermek için tıklayın"
+        "click-to-show": "Göstermek için tıklayın",
+        "transfer-canceled": "Aktarım iptal edildi"
     },
     "peer-ui": {
         "processing": "İşleniyor…",
@@ -159,7 +160,8 @@
         "waiting": "Bekleniyor…",
         "connection-hash": "Uçtan uca şifrelemenin güvenliğini doğrulamak için, bu güvenlik numarasını her iki cihazda da karşılaştırın",
         "preparing": "Hazırlanıyor…",
-        "transferring": "Transfer ediliyor…"
+        "transferring": "Transfer ediliyor…",
+        "cancel-transfer": "Aktarımı iptal et"
     },
     "about": {
         "claim": "Cihazlar arasında dosya aktarmanın en kolay yolu",

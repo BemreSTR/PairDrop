@@ -815,3 +815,37 @@ x-dialog a {
     margin: auto;
     display: block;
 }
+/* Transfer cancel button (visible while a transfer is running) */
+
+.transfer-cancel {
+    display: none;
+    position: absolute;
+    top: -6px;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    padding: 6px;
+    border-radius: 50%;
+    background-color: var(--dialog-bg-color);
+    color: var(--text-color);
+    box-shadow: var(--border-shadow);
+    cursor: pointer;
+    z-index: 2;
+    /* the peer card disables pointer events while a status is set */
+    pointer-events: auto;
+}
+
+.transfer-cancel:hover,
+.transfer-cancel:focus {
+    color: var(--primary-color);
+}
+
+.transfer-cancel .icon {
+    width: 100%;
+    height: 100%;
+    fill: currentColor;
+}
+
+x-peer[status="transfer"] .transfer-cancel {
+    display: flex;
+}
