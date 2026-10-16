@@ -27,6 +27,11 @@ export default class PairDropWsServer {
     _onConnection(peer) {
         peer.socket.on('message', message => this._onMessage(peer, message));
         peer.socket.onerror = e => console.error(e);
+        peer.socket.on('close', () => this._onDisconnect(peer));
+
+        if (this._keepAliveTimers[peer.id]) {
+            this._keepAliveTimers[peer.id].lastBeat = Date.now();
+        }
 
         this._keepAlive(peer);
 
@@ -347,6 +352,14 @@ export default class PairDropWsServer {
             this._rooms[roomId] = {};
         }
 
+        const oldPeer = this._rooms[roomId][peer.id];
+        if (oldPeer && oldPeer !== peer) {
+            this._cancelKeepAlive(oldPeer);
+            try {
+                oldPeer.socket.terminate();
+            } catch (e) {}
+        }
+
         this._notifyPeers(peer, roomType, roomId);
 
         // add peer to room
@@ -375,6 +388,7 @@ export default class PairDropWsServer {
 
     _leaveRoom(peer, roomType, roomId, disconnect = false) {
         if (!this._rooms[roomId] || !this._rooms[roomId][peer.id]) return;
+        if (this._rooms[roomId][peer.id] !== peer) return;
 
         // remove peer from room
         delete this._rooms[roomId][peer.id];
@@ -466,8 +480,8 @@ export default class PairDropWsServer {
 
     _sweepKeepAlives() {
         for (const [peer, lastBeat] of this._keepAliveTimers) {
-            if (Date.now() - lastBeat > 5000) {
-                // Disconnect peer if unresponsive for 5s
+            if (Date.now() - lastBeat > 30000) {
+                // Disconnect peer if unresponsive for 30s (allows mobile file selection / camera)
                 this._disconnect(peer);
                 continue;
             }
