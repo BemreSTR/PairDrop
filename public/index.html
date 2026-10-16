@@ -35,13 +35,21 @@
     <meta name="twitter:image" content="images/logo_transparent_512x512.png">
     <meta property="og:image" content="images/logo_transparent_512x512.png">
     <!-- Resources -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="preload" href="lang/en.json" as="fetch">
-    <link rel="preload" href="fonts/OpenSans/static/OpenSans-Medium.ttf" as="font" type="font/ttf" crossorigin>
     <link rel="stylesheet" type="text/css" href="styles/styles-main.css">
     <link rel="manifest" href="manifest.json">
 </head>
 
 <body translate="no">
+    <!-- Ambient Aurora Glow Layer -->
+    <div class="ambient-aurora" aria-hidden="true">
+        <div class="aurora-orb aurora-1"></div>
+        <div class="aurora-orb aurora-2"></div>
+        <div class="aurora-orb aurora-3"></div>
+    </div>
     <header class="row-reverse wrap opacity-0">
         <a href="#about" class="icon-button" data-i18n-key="header.about" data-i18n-attrs="title aria-label">
             <svg class="icon">
@@ -108,6 +116,14 @@
         <!-- Peers -->
         <x-peers class="center grow-5"></x-peers>
         <x-no-peers class="center grow fade-in no-animation-on-load" data-i18n-key="instructions.no-peers" data-i18n-attrs="data-drop-bg">
+            <div class="radar-pulse-visual" aria-hidden="true">
+                <div class="radar-ring ring-1"></div>
+                <div class="radar-ring ring-2"></div>
+                <div class="radar-ring ring-3"></div>
+                <div class="radar-center-beacon">
+                    <svg class="beacon-icon"><use xlink:href="#wifi-tethering"></use></svg>
+                </div>
+            </div>
             <h2 data-i18n-key="instructions.no-peers-title" data-i18n-attrs="text"></h2>
             <div data-i18n-key="instructions.no-peers-subtitle" data-i18n-attrs="text"></div>
         </x-no-peers>

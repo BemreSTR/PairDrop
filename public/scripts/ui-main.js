@@ -344,10 +344,10 @@ class BackgroundCanvas {
     }
 
     initAnimation() {
-        this.baseColorNormal = '168 168 168';
-        this.baseColorShareMode = '168 168 255';
-        this.baseOpacityNormal = 0.3;
-        this.baseOpacityShareMode = 0.8;
+        this.baseColorNormal = '99 102 241';
+        this.baseColorShareMode = '6 182 212';
+        this.baseOpacityNormal = 0.22;
+        this.baseOpacityShareMode = 0.65;
         this.speed = 0.5;
         this.fps = 60;
 
